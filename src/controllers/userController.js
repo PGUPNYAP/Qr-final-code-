@@ -18,9 +18,7 @@ const submitAccessRequest = async (req, res) => {
     }
 
     // Enforce standard roll format
-    if (idNumber.includes("/")) {
-      return res.status(400).json({ message: "Roll number must not contain '/'" });
-    }
+
 
     // Validity dates check
     if (!validFrom || !validUntil) {
