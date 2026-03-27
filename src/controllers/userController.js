@@ -3,6 +3,7 @@ const QRPass = require("../models/QRPass");
 const { getContributionCalendar } = require("../services/activityService");
 const { getActiveQRType, checkRestriction } = require("../services/qrRotationService");
 const HardwareToken = require("../models/HardwareToken");
+const jwt = require("jsonwebtoken");
 
 /**
  * ✅ User submits access request (Firebase Protected)
@@ -150,7 +151,7 @@ const getUserQRByIdNumber = async (req, res) => {
 
     if (!activeToken) {
       activeToken = await HardwareToken.findOneAndUpdate(
-        { status: "UNASSIGNED", deviceId: "GATE_02" }, // Using GATE_01 as default target
+        { status: "UNASSIGNED", deviceId: "GATE_01" }, // Using GATE_01 as default target
         { 
           status: "ASSIGNED",
           assignedTo: request._id,
@@ -159,6 +160,19 @@ const getUserQRByIdNumber = async (req, res) => {
         },
         { new: true }
       );
+    }
+    
+    // Generate JWT encompassing the hardware token + user constraints
+    let finalToken = null;
+    if (activeToken) {
+      const payload = {
+        tId: activeToken.token,
+        rId: request._id,
+        pTy: activeQRType === "IN" ? 1 : 2,
+        vF: request.validFrom ? Math.floor(new Date(request.validFrom).getTime() / 1000) : null,
+        vU: request.validUntil ? Math.floor(new Date(request.validUntil).getTime() / 1000) : null
+      };
+      finalToken = jwt.sign(payload, process.env.JWT_SECRET, { noTimestamp: true });
     }
 
     return res.json({
@@ -170,9 +184,9 @@ const getUserQRByIdNumber = async (req, res) => {
       validUntil: request.validUntil,
       currentState: request.currentState,
       activeQRType: activeQRType,
-      activeQR: activeToken ? { qrToken: activeToken.token } : null,
-      entryQR: activeQRType === "IN" && activeToken ? { qrToken: activeToken.token } : null,
-      exitQR: activeQRType === "OUT" && activeToken ? { qrToken: activeToken.token } : null,
+      activeQR: activeToken ? { qrToken: finalToken } : null,
+      entryQR: activeQRType === "IN" && activeToken ? { qrToken: finalToken } : null,
+      exitQR: activeQRType === "OUT" && activeToken ? { qrToken: finalToken } : null,
     });
   } catch (err) {
     console.error("❌ Error getUserQRByIdNumber:", err.message);
@@ -297,10 +311,20 @@ const getActiveQR = async (req, res) => {
       });
     }
 
+    // Generate JWT encompassing the hardware token + user constraints
+    const payload = {
+      tId: assignedToken.token,
+      rId: request._id,
+      pTy: rotation.activeQRType === "IN" ? 1 : 2,
+      vF: request.validFrom ? Math.floor(new Date(request.validFrom).getTime() / 1000) : null,
+      vU: request.validUntil ? Math.floor(new Date(request.validUntil).getTime() / 1000) : null
+    };
+    const finalToken = jwt.sign(payload, process.env.JWT_SECRET, { noTimestamp: true });
+
     return res.json({
       status: "APPROVED",
       activeQRType: rotation.activeQRType,
-      qrToken: assignedToken.token,
+      qrToken: finalToken,
       rotationTimestamp: rotation.rotationTimestamp,
       currentState: request.currentState,
     });
